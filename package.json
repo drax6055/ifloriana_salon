@@ -1,0 +1,31 @@
+{
+  "name": "salon_admin",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.9.0",
+    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.2",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "currency.js": "^2.0.4",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "firebase-admin": "^13.4.0",
+    "intl-format-cache": "^4.3.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.16.0",
+    "multer": "^2.0.1",
+    "nodemailer": "^6.10.1",
+    "otp-generator": "^4.0.1",
+    "pdfkit": "^0.17.1",
+    "twilio": "^5.5.2"
+  }
+}
