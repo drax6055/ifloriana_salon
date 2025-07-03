@@ -60,14 +60,17 @@ const OrderSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
+    },
+    invoice_pdf_url: {
+        type: String
     }
 });
 
 // Auto-generate order_code before saving
-OrderSchema.pre('save', async function(next) {
+OrderSchema.pre('save', async function (next) {
     if (this.isNew && !this.order_code) {
         // Example: ORD-YYYYMMDD-XXXX (XXXX = random 4 digits)
-        const datePart = new Date().toISOString().slice(0,10).replace(/-/g, "");
+        const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
         const randomPart = Math.floor(1000 + Math.random() * 9000);
         this.order_code = `ORD-${datePart}-${randomPart}`;
     }

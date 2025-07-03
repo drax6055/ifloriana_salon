@@ -47,7 +47,7 @@ const customerMembershipRoutes = require("./routes/customerMembership");
 const revenueCommissionRoutes = require("./routes/revenueCommission");
 const staffRevenueRoutes = require("./routes/staffRevenue");
 const staffPaymentsRoutes = require("./routes/staffPayments");
-const orderRoutes = require('./routes/order');
+const orderRoutes = require('./routes/order').router;
 // const statusUpdateRoutes = require('./routes/statusUpdate');
 // const generalRoutes = require("./routes/general");
 

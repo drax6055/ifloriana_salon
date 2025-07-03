@@ -41,7 +41,7 @@ router.get("/", async (req, res) => {
       .filter(payment => payment.staff_id)
       .map((payment) => {
         return {
-          payment_date: payment.paid_at,
+          payment_date: payment.paid_at, 
           staff: {
             name: payment.staff_id.full_name || "N/A",
             email: payment.staff_id.email || "N/A",

@@ -6,19 +6,34 @@ const Customer = require('../models/Customer');
 const Payment = require('../models/Payment');
 const StaffPayment = require('../models/StaffPayment');
 const Service = require('../models/Service');
+const Order = require("../models/Order");
 
 router.get('/', async (req, res) => {
-  const { salon_id, month, year } = req.query;
+  const { salon_id, branch_id, startDate, endDate, month, year } = req.query;
 
   if (!salon_id) {
     return res.status(400).json({ message: 'salon_id is required' });
+  }
+
+  const salonObjectId = new mongoose.Types.ObjectId(salon_id);
+  const branchFilter = branch_id ? { branch_id: new mongoose.Types.ObjectId(branch_id) } : {};
+
+  // Prepare date filters
+  let dateMatch = {};
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999); // include full end day
+    dateMatch = { $gte: start, $lte: end };
   }
 
   const filterMonth = month ? parseInt(month) : null;
   const filterYear = year ? parseInt(year) : null;
 
   function getDateFilter(dateField) {
-    if (filterMonth && filterYear) {
+    if (dateMatch.$gte) {
+      return { [dateField]: dateMatch };
+    } else if (filterMonth && filterYear) {
       return {
         $expr: {
           $and: [
@@ -39,13 +54,12 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    const salonObjectId = new mongoose.Types.ObjectId(salon_id);
-
     const [
       appointmentCount,
       customerCount,
       orderCount,
-      productSales,
+      paymentProductSales,
+      orderProductSales,
       totalCommission,
       upcomingAppointments,
       topServices
@@ -53,31 +67,51 @@ router.get('/', async (req, res) => {
 
       Appointment.countDocuments({
         salon_id: salonObjectId,
+        ...branchFilter,
         ...getDateFilter('appointment_date')
       }),
 
       Customer.countDocuments({
         salon_id: salonObjectId,
+        ...branchFilter,
         ...getDateFilter('createdAt')
       }),
 
-      Payment.countDocuments({
+      Order.countDocuments({
         salon_id: salonObjectId,
-        ...getDateFilter('payment_date')
+        ...branchFilter,
+        ...getDateFilter('createdAt')
       }),
 
-      Appointment.aggregate([
+      Payment.aggregate([
         {
           $match: {
             salon_id: salonObjectId,
-            ...getDateFilter('appointment_date')
+            ...branchFilter,
+            ...getDateFilter("createdAt"),
+            product_amount: { $gt: 0 }
           }
         },
-        { $unwind: "$products" },
         {
           $group: {
             _id: null,
-            totalProductSales: { $sum: "$products.total_price" }
+            totalProductSales: { $sum: "$product_amount" }
+          }
+        }
+      ]),
+
+      Order.aggregate([
+        {
+          $match: {
+            salon_id: salonObjectId,
+            ...branchFilter,
+            ...getDateFilter("createdAt")
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalProductSales: { $sum: "$total_price" }
           }
         }
       ]),
@@ -86,7 +120,8 @@ router.get('/', async (req, res) => {
         {
           $match: {
             salon_id: salonObjectId,
-            ...getDateFilter('paid_date')
+            ...branchFilter,
+            ...getDateFilter('paid_at')
           }
         },
         {
@@ -102,6 +137,7 @@ router.get('/', async (req, res) => {
           $match: {
             salon_id: salonObjectId,
             status: "upcoming",
+            ...branchFilter,
             ...getDateFilter('appointment_date')
           }
         },
@@ -142,9 +178,8 @@ router.get('/', async (req, res) => {
         {
           $match: {
             salon_id: salonObjectId,
-            ...(filterMonth && filterYear
-              ? getDateFilter('appointment_date')
-              : filterYear ? getDateFilter('appointment_date') : {})
+            ...branchFilter,
+            ...getDateFilter('appointment_date')
           }
         },
         { $unwind: "$services" },
@@ -183,15 +218,19 @@ router.get('/', async (req, res) => {
       ])
     ]);
 
+    const totalProductSales =
+      (paymentProductSales[0]?.totalProductSales || 0) +
+      (orderProductSales[0]?.totalProductSales || 0);
+
     res.status(200).json({
-        appointmentCount,
-        customerCount,
-        orderCount,
-        productSales: productSales[0]?.totalProductSales || 0,
-        totalCommission: totalCommission[0]?.total || 0,
-        upcomingAppointments,
-        topServices
-      });
+      appointmentCount,
+      customerCount,
+      orderCount,
+      productSales: totalProductSales,
+      totalCommission: totalCommission[0]?.total || 0,
+      upcomingAppointments,
+      topServices
+    });
 
   } catch (error) {
     console.error('Error fetching dashboard data:', error);
@@ -201,21 +240,49 @@ router.get('/', async (req, res) => {
 
 router.get('/dashboard-summary', async (req, res) => {
   try {
-    const { salon_id, startDate, endDate } = req.query;
+    const { salon_id, startDate, endDate, month, year, branch_id } = req.query;
 
     if (!salon_id) {
       return res.status(400).json({ success: false, message: 'salon_id is required' });
     }
 
-    const start = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 7));
-    const end = endDate ? new Date(endDate) : new Date();
+    const salonObjectId = new mongoose.Types.ObjectId(salon_id);
+    const branchFilter = branch_id ? { branch_id: new mongoose.Types.ObjectId(branch_id) } : {};
+
+    let matchFilter = {
+      salon_id: salonObjectId,
+      ...branchFilter
+    };
+
+    // ✅ Case 1: startDate & endDate are provided
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const endD = new Date(endDate);
+      endD.setHours(23, 59, 59, 999);
+      matchFilter.createdAt = { $gte: start, $lte: endD };
+
+    // ✅ Case 2: month & year provided
+    } else if (month && year) {
+      const m = parseInt(month) - 1;
+      const y = parseInt(year);
+      const start = new Date(y, m, 1);
+      const endD = new Date(y, m + 1, 0);
+      endD.setHours(23, 59, 59, 999);
+      matchFilter.createdAt = { $gte: start, $lte: endD };
+
+    // ✅ Case 3: Default to past 7 days
+    } else {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 7);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      matchFilter.createdAt = { $gte: start, $lte: end };
+    }
 
     const result = await Appointment.aggregate([
       {
-        $match: {
-          salon_id: new mongoose.Types.ObjectId(salon_id),
-          createdAt: { $gte: start, $lte: end },
-        }
+        $match: matchFilter
       },
       {
         $group: {
@@ -238,8 +305,8 @@ router.get('/dashboard-summary', async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        lineChart: formatted.map(i => ({ date: i.date, sales: i.sales })),  // for Line Graph
-        barChart: formatted                                                // for Bar Graph
+        lineChart: formatted.map(i => ({ date: i.date, sales: i.sales })),
+        barChart: formatted
       }
     });
   } catch (error) {

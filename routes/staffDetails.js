@@ -88,7 +88,6 @@ router.get("/", async (req, res) => {
         $addFields: {
           total_earning: {
             $add: [
-              { $ifNull: ["$salary", 0] },
               { $ifNull: ["$tips_earn", 0] },
               { $ifNull: ["$commission_earn", 0] },
             ],
@@ -97,15 +96,14 @@ router.get("/", async (req, res) => {
       },
       {
         $project: {
-          staff_id: "$_id",
+          staff_id: "_id",
           staff_name: "$full_name",
           staff_image: "$image",
           staff_email: "$email",
           services: 1,
-          total_amount: "$salary",
           commission_earn: 1,
           tips_earn: 1,
-          total_earning: 1,
+          total_earning: { $add: [ { $ifNull: ["$commission_earn", 0] }, { $ifNull: ["$tips_earn", 0] } ] },
         },
       },
     ]);

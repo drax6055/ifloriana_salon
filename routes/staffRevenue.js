@@ -9,7 +9,7 @@ router.get("/", async (req, res) => {
   try {
     const appointments = await Appointment.find({ status: "completed" }).select("services");
 
-    const staffRevenueMap = {};
+    const staffRevenueMap = {}; 
 
     for (const appt of appointments) {
       if (Array.isArray(appt.services)) {

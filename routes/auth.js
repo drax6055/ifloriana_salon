@@ -137,10 +137,11 @@ router.post("/signup", async (req, res) => {
 
     await newAdmin.save();
 
-    // Save related salon
+
+    // Save related salon (do NOT populate address field)
     const newSalon = new Salon({
       salon_name: parsedSalonDetails.salon_name,
-      address,
+      // address field intentionally omitted
       contact_number: '',
       contact_email: '',
       description: '',
@@ -296,10 +297,7 @@ router.post("/forgot-password", async (req, res) => {
       return res.status(404).json({ message: "Email not found" });
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    resetTokenStore[email] = resetToken;
-
-    const resetLink = `http://localhost:5000/api/auth/reset-password?token=${resetToken}&email=${email}`;
+    const resetLink = `http://localhost:5173/password-reset`;
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
@@ -368,11 +366,11 @@ router.get("/reset-password", async (req, res) => {
   }
 });
 
-// Reset Password - POST route to update password
+// Reset Password - POST route to update password (no token required)
 router.post("/reset-password", async (req, res) => {
-  const { token, email, new_password, confirm_password } = req.body;
+  const { email, new_password, confirm_password } = req.body;
 
-  if (!token || !email || !new_password || !confirm_password) {
+  if (!email || !new_password || !confirm_password) {
     return res.status(400).json({ message: "All fields are required" });
   }
 
@@ -381,12 +379,6 @@ router.post("/reset-password", async (req, res) => {
   }
 
   try {
-    const storedToken = resetTokenStore[email];
-
-    if (!storedToken || storedToken !== token) {
-      return res.status(400).json({ message: "Invalid or expired token" });
-    }
-
     const admin = await Admin.findOne({ email });
     if (!admin) {
       return res.status(404).json({ message: "Admin not found" });
@@ -395,9 +387,6 @@ router.post("/reset-password", async (req, res) => {
     const hashedPassword = await bcrypt.hash(new_password, 10);
     admin.password = hashedPassword;
     await admin.save();
-
-    // Remove the token after successful password reset
-    delete resetTokenStore[email];
 
     res.status(201).json({ message: "Password reset successfully" });
   } catch (error) {

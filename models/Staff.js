@@ -49,10 +49,6 @@ const StaffSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
-  salary: {
-    type: Number,
-    required: true,
-  },
   show_in_calendar: {
     type: Boolean,
     default: false,

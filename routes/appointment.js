@@ -6,6 +6,10 @@ const Product = require("../models/Product");
 const Customer = require("../models/Customer");
 const CustomerPackage = require("../models/CustomerPackage");
 const mongoose = require("mongoose");
+const Order = require("../models/Order");
+const orderHelpers = require("../routes/order");
+const generateOrderInvoicePDF = orderHelpers.generateOrderInvoicePDF;
+const buildOrderInvoice = orderHelpers.buildOrderInvoice;
 
 // ✅ Create Appointment
 router.post("/", async (req, res) => {
@@ -18,7 +22,7 @@ router.post("/", async (req, res) => {
       appointment_time,
       services = [],
       products = [],
-      notes, 
+      notes,
       status,
       payment_status,
     } = req.body;
@@ -106,6 +110,72 @@ router.post("/", async (req, res) => {
       notes, status, payment_status,
       total_payment, order_code
     });
+
+    // create orders if products are bought
+    if (updatedProducts.length > 0) {
+      const orderProducts = updatedProducts.map(prod => ({
+        product_id: prod.product_id,
+        variant_id: prod.variant_id,
+        quantity: prod.quantity,
+        unit_price: prod.unit_price,
+        total_price: prod.total_price
+      }));
+
+      const total_price = updatedProducts.reduce((sum, p) => sum + p.total_price, 0);
+
+      // Use a valid payment_method for Order (default to "cash")
+      const payment_method = req.body.payment_method && ["cash","card","upi"].includes(req.body.payment_method)
+        ? req.body.payment_method
+        : "cash";
+
+      const newOrder = new Order({
+        salon_id,
+        branch_id,
+        customer_id,
+        products: orderProducts,
+        total_price,
+        payment_method
+      });
+
+      await newOrder.save();
+
+      // ✅ Populate necessary fields for invoice
+      await newOrder.populate([
+        { path: "salon_id" },
+        { path: "branch_id" },
+        { path: "customer_id" },
+        { path: "products.product_id" },
+        { path: "products.variant_id" }
+      ]);
+
+      // ✅ Build invoice object
+      const invoice = buildOrderInvoice(newOrder);
+
+      // ✅ Generate PDF and save filename
+      const pdfFileName = await generateOrderInvoicePDF(invoice, newOrder.order_code);
+      const invoicePDFUrl = `/api/uploads/${pdfFileName}`;
+
+      // ✅ Update order with invoice URL
+      newOrder.invoice_pdf_url = invoicePDFUrl;
+      await newOrder.save();
+
+      // ✅ Reduce product/variant stock after order creation
+      for (const prod of updatedProducts) {
+        const productDoc = await Product.findById(prod.product_id);
+        if (productDoc) {
+          if (prod.variant_id) {
+            const variant = productDoc.variants.find(v => v._id.toString() === prod.variant_id.toString());
+            if (variant && typeof variant.stock === 'number') {
+              variant.stock = Math.max(0, variant.stock - prod.quantity);
+            }
+          } else if (typeof productDoc.stock === 'number') {
+            productDoc.stock = Math.max(0, productDoc.stock - prod.quantity);
+          }
+          await productDoc.save();
+        }
+      }
+    }
+
 
     res.status(201).json({ message: "Appointment created successfully", data: appointment });
   } catch (err) {
@@ -314,11 +384,11 @@ router.put("/:id", async (req, res) => {
     updateData.total_payment = total_payment;
 
     const updatedAppointment = await Appointment.findByIdAndUpdate(id, updateData, { new: true });
-    res.status(200).json({ 
-      message: "Appointment updated successfully", 
-      data: updatedAppointment, 
-      service_amount: serviceTotal, 
-      product_amount: productTotal 
+    res.status(200).json({
+      message: "Appointment updated successfully",
+      data: updatedAppointment,
+      service_amount: serviceTotal,
+      product_amount: productTotal
     });
   } catch (error) {
     console.error("Error updating appointment:", error);

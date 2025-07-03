@@ -8,7 +8,7 @@ const Payment = require("../models/Payment");
 const RevenueCommission = require("../models/RevenueCommission");
 const StaffPayment = require("../models/StaffPayment");
 const Salon = require("../models/Salon");
-
+ 
 // GET /staff-earning
 router.get("/", async (req, res) => {
   try {
@@ -80,8 +80,7 @@ router.get("/", async (req, res) => {
         }
       }
 
-      const staff_salary = staff.salary || 0;
-      const staff_earning = staff_salary + commission_earning + tip_earning;
+      const staff_earning = commission_earning + tip_earning;
 
       await StaffEarning.findOneAndUpdate(
         { staff_id },
@@ -103,7 +102,6 @@ router.get("/", async (req, res) => {
         staff_image: staff_image || null,
         total_booking,
         service_amount,
-        staff_salary,
         commission_earning,
         tip_earning,
         staff_earning,
@@ -185,15 +183,13 @@ router.get("/:id", async (req, res) => {
       }
     }
 
-    const staff_salary = staff.salary || 0;
-    const staff_earning = staff_salary + commission_earning + tip_earning;
+    const staff_earning = commission_earning + tip_earning;
 
     return res.status(200).json({
       staff_id,
       staff_name: staff.full_name,
       total_booking,
       service_amount,
-      staff_salary,
       commission_earning,
       tip_earning,
       staff_earning,

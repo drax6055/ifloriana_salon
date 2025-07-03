@@ -20,7 +20,6 @@ router.post("/", async (req, res) => {
     service_id,
     status,
     image,
-    salary,
     show_in_calendar,
     assign_time,
     lunch_time,
@@ -48,11 +47,10 @@ router.post("/", async (req, res) => {
       service_id,
       status,
       image,
-      salary,
       show_in_calendar,
       assign_time,
       lunch_time,
-      assigned_commission_id,
+      assigned_commission_id
     });
     await newStaff.save();
 
