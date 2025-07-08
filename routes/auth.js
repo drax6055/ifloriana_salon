@@ -14,7 +14,7 @@ const upload = multer({ storage });
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const jwt = require("jsonwebtoken"); 
 const Admin = require("../models/Admin");
 const SuperAdminPackage = require("../models/SuperAdminPackage");
 const Salon = require("../models/Salon");
@@ -155,11 +155,12 @@ router.post("/signup", async (req, res) => {
     await newSalon.save();
 
     // Send email
+    const signupMailText = `Hello,\n\nThank you for signing up with ifloriana Booking & Management software. Your account has been successfully created!\n\nHere are your login details:\n🔹 Username/Email: ${email}\n🔹 Password: ${password}\n\nFirst Steps:\n\nLog in here: www.admin.ifloriana.com\n\nChange your password after first login for security.\n\nNeed Help?\nContact our support team at ifloriana2025@gmail.com.\n\nThanks\nTeam IIPL\nIFLORA INFO PVT. LTD.`;
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "Your Admin Account Credentials",
-      text: `Hello ${full_name},\n\nYour account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nPlease login using these credentials.\n\nThank you!`,
+      subject: "Account successfully created! - Here's your login info",
+      text: signupMailText,
     });
 
     res.status(201).json({
@@ -297,12 +298,19 @@ router.post("/forgot-password", async (req, res) => {
       return res.status(404).json({ message: "Email not found" });
     }
 
-    const resetLink = `http://localhost:5173/password-reset`;
+
+    // Generate a token and store it for the email
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    resetTokenStore[email] = resetToken;
+
+    // Send reset link with token and email as query params
+    const resetLink = `http://localhost:5173/password-reset?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
+    const mailText = `Hello,\n\nYou recently requested to reset your password for your ifloriana booking & management software. If you did not make this request, please ignore this email.\n\nTo reset your password, click the link below:\n\n${resetLink}\n\nFor security reasons, this link will expire in 24 hours. If you need help, contact our support team at ifloriana2025@gmail.com.\n\nThanks,\nTeam IIPL\nIFLORA INFO PVT. LTD.`;
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
       subject: "Password Reset Request",
-      text: `Click the link to reset your password: ${resetLink}`,
+      text: mailText,
     });
 
     res.status(201).json({ message: "Password reset link sent to your email" });
@@ -366,11 +374,12 @@ router.get("/reset-password", async (req, res) => {
   }
 });
 
-// Reset Password - POST route to update password (no token required)
-router.post("/reset-password", async (req, res) => {
-  const { email, new_password, confirm_password } = req.body;
 
-  if (!email || !new_password || !confirm_password) {
+// Reset Password - POST route to update password (token required)
+router.post("/reset-password", async (req, res) => {
+  const { token, email, new_password, confirm_password } = req.body;
+
+  if (!token || !email || !new_password || !confirm_password) {
     return res.status(400).json({ message: "All fields are required" });
   }
 
@@ -379,6 +388,11 @@ router.post("/reset-password", async (req, res) => {
   }
 
   try {
+    const storedToken = resetTokenStore[email];
+    if (!storedToken || storedToken !== token) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
     const admin = await Admin.findOne({ email });
     if (!admin) {
       return res.status(404).json({ message: "Admin not found" });
@@ -387,6 +401,9 @@ router.post("/reset-password", async (req, res) => {
     const hashedPassword = await bcrypt.hash(new_password, 10);
     admin.password = hashedPassword;
     await admin.save();
+
+    // Remove the token after successful password reset
+    delete resetTokenStore[email];
 
     res.status(201).json({ message: "Password reset successfully" });
   } catch (error) {
@@ -412,7 +429,6 @@ router.put("/update-admin/:id", upload.single("image"), async (req, res) => {
     phone_number,
     email,
     address,
-    package_id,
     salonDetails
   } = req.body;
 

@@ -26,19 +26,66 @@ router.get("/", async (req, res) => {
       },
       {
         $lookup: {
-          from: "commissions",
-          localField: "commission_id",
-          foreignField: "_id",
-          as: "commissions",
+          from: "revenuecommissions",
+          let: { commissionId: { $ifNull: ["$assigned_commission_id", "$commission_id"] } },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$commissionId"] } } }
+          ],
+          as: "commission_details",
         },
       },
       {
         $lookup: {
+          from: "appointments",
+          let: { staffId: "$_id" },
+          pipeline: [
+            { $match: { status: "check-out" } },
+            { $unwind: "$services" },
+            { $match: { $expr: { $eq: ["$services.staff_id", "$$staffId"] } } },
+            { 
+              $project: { 
+                service_amount: "$services.service_amount", 
+                service_id: "$services.service_id" 
+              } 
+            }
+          ],
+          as: "provided_services"
+        }
+      },
+      {
+        $lookup: {
           from: "payments",
-          localField: "_id",
-          foreignField: "staff_id",
-          as: "tips",
-        },
+          let: { staffId: "$_id" },
+          pipeline: [
+            { 
+              $lookup: {
+                from: "appointments",
+                localField: "appointment_id",
+                foreignField: "_id",
+                as: "appointment"
+              }
+            },
+            { $unwind: "$appointment" },
+            { $unwind: "$appointment.services" },
+            { 
+              $match: { 
+                $expr: { 
+                  $and: [
+                    { $eq: ["$appointment.services.staff_id", "$$staffId"] },
+                    { $gt: ["$tips", 0] }
+                  ]
+                }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                total_tips: { $sum: "$tips" }
+              }
+            }
+          ],
+          as: "staff_tips"
+        }
       },
       {
         $lookup: {
@@ -50,60 +97,61 @@ router.get("/", async (req, res) => {
       },
       {
         $addFields: {
-          commission_earn: {
+          commission: {
             $sum: {
               $map: {
-                input: "$commissions",
-                as: "commission",
+                input: "$provided_services",
+                as: "service",
                 in: {
-                  $add: [
-                    {
-                      $sum: {
-                        $map: {
-                          input: "$$commission.revenue_commission",
-                          as: "revenue",
-                          in: { $ifNull: ["$$revenue.amount", 0] },
-                        },
-                      },
+                  $let: {
+                    vars: {
+                      matchingSlot: {
+                        $first: {
+                          $filter: {
+                            input: { $ifNull: [{ $arrayElemAt: ["$commission_details.commission", 0] }, []] },
+                            as: "slot",
+                            cond: {
+                              $and: [
+                                { $lte: [{ $toDouble: { $arrayElemAt: [{ $split: ["$$slot.slot", "-"] }, 0] } }, "$$service.service_amount"] },
+                                { $gte: [{ $toDouble: { $arrayElemAt: [{ $split: ["$$slot.slot", "-"] }, 1] } }, "$$service.service_amount"] }
+                              ]
+                            }
+                          }
+                        }
+                      }
                     },
-                    {
-                      $sum: {
-                        $map: {
-                          input: "$$commission.service_commission",
-                          as: "service",
-                          in: { $ifNull: ["$$service.amount", 0] },
-                        },
-                      },
-                    },
-                  ],
-                },
-              },
-            },
+                    in: {
+                      $cond: [
+                        { $eq: [{ $arrayElemAt: ["$commission_details.commission_type", 0] }, "Percentage"] },
+                        { $divide: [{ $multiply: ["$$service.service_amount", "$$matchingSlot.amount"] }, 100] },
+                        "$$matchingSlot.amount"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           },
-          tips_earn: { $sum: "$tips.tips" },
-          services: { $size: "$services_provided" },
+          tips: { $ifNull: [{ $arrayElemAt: ["$staff_tips.total_tips", 0] }, 0] },
+          service_count: { $size: "$provided_services" }
         },
       },
       {
         $addFields: {
-          total_earning: {
-            $add: [
-              { $ifNull: ["$tips_earn", 0] },
-              { $ifNull: ["$commission_earn", 0] },
-            ],
-          },
+          total_earning: { $add: ["$commission", "$tips"] },
         },
       },
       {
         $project: {
-          staff_id: "_id",
+          _id: 1,
+          staff_id: "$_id",
           staff_name: "$full_name",
           staff_image: "$image",
           staff_email: "$email",
-          services: 1,
-          commission_earn: 1,
-          tips_earn: 1,
-          total_earning: { $add: [ { $ifNull: ["$commission_earn", 0] }, { $ifNull: ["$tips_earn", 0] } ] },
+          service_count: 1,
+          commission: 1,
+          tips: 1,
+          total_earning: 1,
         },
       },
     ]);

@@ -29,7 +29,11 @@ const StaffPaymentSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  commission_amount: {  // Add this new field
+    type: Number,
+    default: 0,
+    required: true
+  },
 }, { timestamps: true });
 
-// ✅ EXPORT THE RIGHT MODEL NAME
 module.exports = mongoose.model("StaffPayment", StaffPaymentSchema);
